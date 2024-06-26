@@ -8,7 +8,7 @@ use std::{
 const IP: &str = "127.0.0.1";
 const PORT: u16 = 6969;
 const OK_STATUS: &str = "HTTP/1.1 200 OK";
-const NOT_FOUND_STATUS: &str = "HTTP/1.1 200 OK";
+const NOT_FOUND_STATUS: &str = "HTTP/1.1 404 NOT FOUND";
 
 type Result<T> = result::Result<T, ()>;
 
