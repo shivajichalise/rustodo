@@ -4,7 +4,6 @@ use std::{
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
     result,
-    time::SystemTime,
 };
 
 const IP: &str = "127.0.0.1";
@@ -74,6 +73,18 @@ fn parse_delete_request(request: &str) -> Option<u64> {
     None
 }
 
+fn todo_hashmap_to_string(todos: &mut HashMap<u64, String>) -> String {
+    let mut serialized_data = String::new();
+    for (key, value) in todos {
+        serialized_data.push_str(&format!(
+                "<li>{} <button hx-delete=\"/todos/{}\" hx-swap=\"innerHTML\" hx-target=\"#todos\">delete</button></li>\n",
+                value, key
+            ));
+    }
+
+    serialized_data
+}
+
 fn handle_client(
     mut stream: TcpStream,
     todos: &mut HashMap<u64, String>,
@@ -103,13 +114,7 @@ fn handle_client(
         todos.insert(*todos_count, todo.to_string());
         *todos_count += 1;
 
-        let mut serialized_data = String::new();
-        for (key, value) in todos {
-            serialized_data.push_str(&format!(
-                "<li>{} <button hx-delete=\"/todos/{}\" hx-swap=\"innerHTML\" hx-target=\"#todos\">delete</button></li>\n",
-                value, key
-            ));
-        }
+        let serialized_data = todo_hashmap_to_string(todos);
 
         respond(stream, OK_STATUS.to_string(), serialized_data)?;
     } else if buffer.starts_with(delete_todo) {
@@ -118,13 +123,7 @@ fn handle_client(
 
         todos.remove(&todo_id);
 
-        let mut serialized_data = String::new();
-        for (key, value) in todos {
-            serialized_data.push_str(&format!(
-                "<li>{} <button hx-delete=\"/todos/{}\" hx-swap=\"innerHTML\" hx-target=\"#todos\">delete</button></li>\n",
-                value, key
-            ));
-        }
+        let serialized_data = todo_hashmap_to_string(todos);
 
         respond(stream, OK_STATUS.to_string(), serialized_data)?;
     } else {
