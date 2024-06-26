@@ -1,8 +1,10 @@
 use std::{
+    collections::HashMap,
     fs,
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
     result,
+    time::SystemTime,
 };
 
 const IP: &str = "127.0.0.1";
@@ -31,7 +33,20 @@ fn respond(mut stream: TcpStream, status_line: String, content: String) -> Resul
     Ok(())
 }
 
-fn handle_client(mut stream: TcpStream) -> Result<()> {
+fn parse_request(request: &str) -> Option<&str> {
+    let lines = request.lines();
+    for line in lines {
+        if line.starts_with("todo") {
+            if let Some((_, todo)) = line.split_once("=") {
+                return Some(todo);
+            }
+        }
+    }
+
+    None
+}
+
+fn handle_client(mut stream: TcpStream, todos: &mut HashMap<SystemTime, String>) -> Result<()> {
     let mut buffer = [0; 1024];
 
     stream.read(&mut buffer).map_err(|err| {
@@ -39,14 +54,27 @@ fn handle_client(mut stream: TcpStream) -> Result<()> {
     })?;
 
     let home = b"GET / HTTP/1.1\r\n";
-    let test = b"GET /test HTTP/1.1\r\n";
+    let get_todos = b"GET /todos HTTP/1.1\r\n";
+    let add_todo = b"POST /todos HTTP/1.1\r\n";
 
     if buffer.starts_with(home) {
         let index_page = fs::read_to_string("index.html").unwrap();
         respond(stream, OK_STATUS.to_string(), index_page)?;
-    } else if buffer.starts_with(test) {
-        let message = String::from("HELLO WORLD");
-        respond(stream, OK_STATUS.to_string(), message)?;
+    } else if buffer.starts_with(get_todos) {
+        let todos = String::from("No todos found!");
+        respond(stream, OK_STATUS.to_string(), todos)?;
+    } else if buffer.starts_with(add_todo) {
+        let request = String::from_utf8_lossy(&buffer[..]);
+        let todo = parse_request(&request).unwrap();
+
+        todos.insert(SystemTime::now(), todo.to_string());
+
+        let mut serialized_data = String::new();
+        for (_, value) in todos {
+            serialized_data.push_str(&format!("<li>{}</li>\n", value));
+        }
+
+        respond(stream, OK_STATUS.to_string(), serialized_data)?;
     } else {
         let not_found = fs::read_to_string("404.html").unwrap();
         respond(stream, NOT_FOUND_STATUS.to_string(), not_found)?;
@@ -63,11 +91,12 @@ fn main() -> Result<()> {
     })?;
 
     println!("INFO: Listening on {addr}");
+    let mut todos: HashMap<SystemTime, String> = HashMap::new();
 
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                let _ = handle_client(stream);
+                let _ = handle_client(stream, &mut todos);
             }
             Err(err) => {
                 eprintln!("ERROR: Cannot accept connection: {err}");

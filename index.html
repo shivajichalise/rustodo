@@ -11,14 +11,16 @@
     ></script>
   </head>
   <body>
-    <div class="flex h-screen items-center justify-center">
-      <div class="flex flex-col items-center justify-center gap-5">
-        <h1 class="text-3xl font-bold underline">Rustodo</h1>
+    <div>
+      <h1>Rustodo</h1>
 
-        <div class="flex w-screen items-center justify-center gap-4">
-          <input type="text" name="todo" />
-          <button type="button">Add</button>
-        </div>
+      <form hx-post="/todos" hx-target="#todos" hx-swap="innerHTML">
+        <input name="todo" />
+        <button type="submit">Add</button>
+      </form>
+
+      <div id="">
+        <ol id="todos"></ol>
       </div>
     </div>
   </body>
