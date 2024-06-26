@@ -11,14 +11,15 @@
     ></script>
   </head>
   <body>
-    <div id="parent-div">Click below button for a greeting.</div>
-    <button
-      hx-get="http://127.0.0.1:6969/test"
-      hx-trigger="click"
-      hx-target="#parent-div"
-      hx-swap="innerHTML"
-    >
-      Click Me!
-    </button>
+    <div class="flex h-screen items-center justify-center">
+      <div class="flex flex-col items-center justify-center gap-5">
+        <h1 class="text-3xl font-bold underline">Rustodo</h1>
+
+        <div class="flex w-screen items-center justify-center gap-4">
+          <input type="text" name="todo" />
+          <button type="button">Add</button>
+        </div>
+      </div>
+    </div>
   </body>
 </html>
