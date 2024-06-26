@@ -33,7 +33,7 @@ fn respond(mut stream: TcpStream, status_line: String, content: String) -> Resul
     Ok(())
 }
 
-fn parse_request(request: &str) -> Option<&str> {
+fn parse_add_request(request: &str) -> Option<&str> {
     let lines = request.lines();
     for line in lines {
         if line.starts_with("todo") {
@@ -46,7 +46,39 @@ fn parse_request(request: &str) -> Option<&str> {
     None
 }
 
-fn handle_client(mut stream: TcpStream, todos: &mut HashMap<SystemTime, String>) -> Result<()> {
+fn parse_delete_request(request: &str) -> Option<u64> {
+    let lines = request.lines();
+    for line in lines {
+        if line.starts_with("DELETE") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            for part in parts {
+                if part.starts_with("/todos") {
+                    let p: Vec<&str> = part.split("/").collect();
+
+                    for val in p {
+                        match val.parse::<u64>() {
+                            Ok(number) => {
+                                return Some(number);
+                            }
+                            Err(_) => {
+                                // Ignore errors (strings that cannot be parsed into u64)
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn handle_client(
+    mut stream: TcpStream,
+    todos: &mut HashMap<u64, String>,
+    todos_count: &mut u64,
+) -> Result<()> {
     let mut buffer = [0; 1024];
 
     stream.read(&mut buffer).map_err(|err| {
@@ -56,6 +88,7 @@ fn handle_client(mut stream: TcpStream, todos: &mut HashMap<SystemTime, String>)
     let home = b"GET / HTTP/1.1\r\n";
     let get_todos = b"GET /todos HTTP/1.1\r\n";
     let add_todo = b"POST /todos HTTP/1.1\r\n";
+    let delete_todo = b"DELETE /todos";
 
     if buffer.starts_with(home) {
         let index_page = fs::read_to_string("index.html").unwrap();
@@ -65,17 +98,37 @@ fn handle_client(mut stream: TcpStream, todos: &mut HashMap<SystemTime, String>)
         respond(stream, OK_STATUS.to_string(), todos)?;
     } else if buffer.starts_with(add_todo) {
         let request = String::from_utf8_lossy(&buffer[..]);
-        let todo = parse_request(&request).unwrap();
+        let todo = parse_add_request(&request).unwrap();
 
-        todos.insert(SystemTime::now(), todo.to_string());
+        todos.insert(*todos_count, todo.to_string());
+        *todos_count += 1;
 
         let mut serialized_data = String::new();
-        for (_, value) in todos {
-            serialized_data.push_str(&format!("<li>{}</li>\n", value));
+        for (key, value) in todos {
+            serialized_data.push_str(&format!(
+                "<li>{} <button hx-delete=\"/todos/{}\" hx-swap=\"innerHTML\" hx-target=\"#todos\">delete</button></li>\n",
+                value, key
+            ));
+        }
+
+        respond(stream, OK_STATUS.to_string(), serialized_data)?;
+    } else if buffer.starts_with(delete_todo) {
+        let request = String::from_utf8_lossy(&buffer[..]);
+        let todo_id = parse_delete_request(&request).unwrap();
+
+        todos.remove(&todo_id);
+
+        let mut serialized_data = String::new();
+        for (key, value) in todos {
+            serialized_data.push_str(&format!(
+                "<li>{} <button hx-delete=\"/todos/{}\" hx-swap=\"innerHTML\" hx-target=\"#todos\">delete</button></li>\n",
+                value, key
+            ));
         }
 
         respond(stream, OK_STATUS.to_string(), serialized_data)?;
     } else {
+        println!("{}", String::from_utf8_lossy(&buffer[..]));
         let not_found = fs::read_to_string("404.html").unwrap();
         respond(stream, NOT_FOUND_STATUS.to_string(), not_found)?;
     }
@@ -91,12 +144,13 @@ fn main() -> Result<()> {
     })?;
 
     println!("INFO: Listening on {addr}");
-    let mut todos: HashMap<SystemTime, String> = HashMap::new();
+    let mut todos: HashMap<u64, String> = HashMap::new();
+    let mut todos_count: u64 = 1;
 
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                let _ = handle_client(stream, &mut todos);
+                let _ = handle_client(stream, &mut todos, &mut todos_count);
             }
             Err(err) => {
                 eprintln!("ERROR: Cannot accept connection: {err}");
