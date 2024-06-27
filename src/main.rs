@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    fmt::Write as FmtWrite,
     fs,
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
@@ -10,6 +11,9 @@ const IP: &str = "127.0.0.1";
 const PORT: u16 = 6969;
 const OK_STATUS: &str = "HTTP/1.1 200 OK";
 const NOT_FOUND_STATUS: &str = "HTTP/1.1 404 NOT FOUND";
+const HOME: &[u8; 16] = b"GET / HTTP/1.1\r\n";
+const ADD_TODO: &[u8; 22] = b"POST /todos HTTP/1.1\r\n";
+const DELETE_TODO: &[u8; 13] = b"DELETE /todos";
 
 type Result<T> = result::Result<T, ()>;
 
@@ -33,53 +37,31 @@ fn respond(mut stream: TcpStream, status_line: String, content: String) -> Resul
 }
 
 fn parse_add_request(request: &str) -> Option<&str> {
-    let lines = request.lines();
-    for line in lines {
-        if line.starts_with("todo") {
-            if let Some((_, todo)) = line.split_once("=") {
-                return Some(todo);
-            }
-        }
-    }
-
-    None
+    request
+        .lines()
+        .filter(|line| line.starts_with("todo"))
+        .find_map(|line| line.split_once("=").map(|(_, todo)| todo))
 }
 
 fn parse_delete_request(request: &str) -> Option<u64> {
-    let lines = request.lines();
-    for line in lines {
-        if line.starts_with("DELETE") {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            for part in parts {
-                if part.starts_with("/todos") {
-                    let p: Vec<&str> = part.split("/").collect();
-
-                    for val in p {
-                        match val.parse::<u64>() {
-                            Ok(number) => {
-                                return Some(number);
-                            }
-                            Err(_) => {
-                                // Ignore errors (strings that cannot be parsed into u64)
-                                continue;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    None
+    request
+        .lines()
+        .filter(|line| line.starts_with("DELETE"))
+        .find_map(|line| {
+            line.split_whitespace()
+                .filter(|part| part.starts_with("/todos"))
+                .flat_map(|part| part.split("/"))
+                .find_map(|p| p.parse::<u64>().ok())
+        })
 }
 
 fn todo_hashmap_to_string(todos: &mut HashMap<u64, String>) -> String {
     let mut serialized_data = String::new();
     for (key, value) in todos {
-        serialized_data.push_str(&format!(
+        writeln!(&mut serialized_data,
                 "<li>{} <button hx-delete=\"/todos/{}\" hx-swap=\"innerHTML\" hx-target=\"#todos\">delete</button></li>\n",
                 value, key
-            ));
+            ).unwrap();
     }
 
     serialized_data
@@ -96,19 +78,12 @@ fn handle_client(
         eprintln!("ERROR: Cannot read the connection stream from client: {err}");
     })?;
 
-    let home = b"GET / HTTP/1.1\r\n";
-    let get_todos = b"GET /todos HTTP/1.1\r\n";
-    let add_todo = b"POST /todos HTTP/1.1\r\n";
-    let delete_todo = b"DELETE /todos";
+    let request = String::from_utf8_lossy(&buffer[..]);
 
-    if buffer.starts_with(home) {
+    if buffer.starts_with(HOME) {
         let index_page = fs::read_to_string("index.html").unwrap();
         respond(stream, OK_STATUS.to_string(), index_page)?;
-    } else if buffer.starts_with(get_todos) {
-        let todos = String::from("No todos found!");
-        respond(stream, OK_STATUS.to_string(), todos)?;
-    } else if buffer.starts_with(add_todo) {
-        let request = String::from_utf8_lossy(&buffer[..]);
+    } else if buffer.starts_with(ADD_TODO) {
         let todo = parse_add_request(&request).unwrap();
 
         todos.insert(*todos_count, todo.to_string());
@@ -117,8 +92,7 @@ fn handle_client(
         let serialized_data = todo_hashmap_to_string(todos);
 
         respond(stream, OK_STATUS.to_string(), serialized_data)?;
-    } else if buffer.starts_with(delete_todo) {
-        let request = String::from_utf8_lossy(&buffer[..]);
+    } else if buffer.starts_with(DELETE_TODO) {
         let todo_id = parse_delete_request(&request).unwrap();
 
         todos.remove(&todo_id);
